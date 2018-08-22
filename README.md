@@ -1,4 +1,5 @@
 # taiga-server
+repository for taiga server hosting
 
 ## Requirements
 Fresh Ubuntu 16.04 x64
