@@ -1,0 +1,5 @@
+installation description:
+http://taigaio.github.io/taiga-doc/dist/setup-production.html
+
+installation scripts:
+https://github.com/taigaio/taiga-scripts
