@@ -12,18 +12,22 @@
 
 TAIGA_USER_NAME="taiga"
 
-TAIGA_EVENTS_PASSWORD="som3.event"
-TAIGA_BACKEND_SECRET_KEY="som3.secretKey"
-
 TAIGA_DOMAIN="taiga.some.one"
 #TAIGA_DOMAIN=$(hostname -I | head -n1 | cut -d " " -f1)
 
-ENABLE_LETSENCRYPT=true
+TAIGA_EVENTS_PASSWORD="som3.event"
+TAIGA_BACKEND_SECRET_KEY="som3.secretKey"
+
+TAIGA_BACKUP_NAME="taigabackup"
+BACKUP_EVENT="0 3	* * *" # every day at 03:00 (see https://wiki.ubuntuusers.de/Cron/ for syntax)
+BACKUP_KEY="dummy1234"
+
+ENABLE_LETSENCRYPT=false
 LETSENCRYPT_EMAIL="dummy@dummy.com"
 LETSENCRYPT_RENEW_EVENT="30 2	1 */2 *" # At 02:30 on day-of-month 1 in every 2nd month.
                                          # (Every 60 days. That's the default time range from certbot)
 
-RECREATING_DH_PARAMETER=true # strengthens security but takes a long time to generate
+RECREATING_DH_PARAMETER=false # strengthens security but takes a long time to generate
 
 
 ###################################################################################################
@@ -282,6 +286,73 @@ fi)
 }
 "
 
+BACKUP_SCRIPT_CONTENT="
+#!/bin/bash
+
+BACKUP_NAME=\"taiga-backup-\$(date +'%s').tar.gz\"
+
+
+echo \"\" > /home/${TAIGA_USER_NAME}/taiga.dump
+chmod 666 /home/${TAIGA_USER_NAME}/taiga.dump
+
+sudo -u postgres pg_dump --format=custom --dbname=taiga --file=/home/${TAIGA_USER_NAME}/taiga.dump
+
+sudo bash -c \"rm -f /home/${TAIGA_BACKUP_NAME}/persist/taiga-backup-*\"
+
+tar -pcvzf /home/${TAIGA_USER_NAME}/\${BACKUP_NAME} /home/${TAIGA_USER_NAME}/taiga.dump /home/${TAIGA_USER_NAME}/taiga-back/media/
+sudo openssl enc -aes-256-cbc -e -in /home/${TAIGA_USER_NAME}/\${BACKUP_NAME} -out /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\" -kfile /home/${TAIGA_USER_NAME}/backup-key.txt
+
+rm -f /home/${TAIGA_USER_NAME}/taiga.dump
+rm -f /home/${TAIGA_USER_NAME}/\${BACKUP_NAME}
+
+sudo chown ${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\"
+sudo chmod 400 /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\"
+"
+
+
+
+RESTORE_SCRIPT_CONTENT="
+#!/bin/bash
+sudo -u postgres dropdb taiga
+sudo -u postgres createdb taiga
+sudo -u postgres pg_restore -d taiga ~/Backup/taiga.dump
+
+
+https://github.com/taigaio/taiga-back/issues/961
+https://github.com/taigaio/taiga-doc/issues/133
+https://github.com/taigaio/taiga-back/issues/100
+"
+
+
+
+
+
+
+
+
+ADD_BACKUP_SSHKEY_SCRIPT_CONTENT="
+#!/bin/bash
+
+PUB_SSH_KEY=\$1
+
+
+if ! [ \${PUB_SSH_KEY:0:7} = \"ssh-rsa\" ]; then
+    echo \"[ERROR] input parameter seems not to be an ssh-rsa public key\"
+elif ! [ \$# = 1 ]; then
+    echo \"[ERROR] two many arguments. Surround rsa key with double quotes: \\\"<PUBLIC KEY>\\\"\"
+else
+    echo \"command=\\\"if [[ \\\\\\\"\\\$SSH_ORIGINAL_COMMAND\\\\\\\" =~ ^scp[[:space:]]-t[[:space:]]restore/.? ]] || [[ \\\\\\\"\\\$SSH_ORIGINAL_COMMAND\\\\\\\" =~ ^scp[[:space:]]-f[[:space:]]persist/.? ]]; then \\\$SSH_ORIGINAL_COMMAND ; else echo Access Denied; fi\\\",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding \${PUB_SSH_KEY}\" | sudo tee /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys > /dev/null
+fi
+"
+
+
+UNATTENDED_UPGRADE_PERIODIC_SCRIPT_CONTENT="
+APT::Periodic::Update-Package-Lists \"1\";
+APT::Periodic::Download-Upgradeable-Packages \"1\";
+APT::Periodic::Unattended-Upgrade \"1\";
+APT::Periodic::AutocleanInterval \"1\";
+"
+
 
 RENEW_CERTIFICATE_SCRIPT_CONTENT="
 #!/bin/bash
@@ -298,13 +369,6 @@ echo \"\" >> renew-certificate.log
 
 echo \"[INFO] restarting nginx service ...\" >> renew-certificate.log
 systemctl start nginx.service >> renew-certificate.log
-"
-
-UNATTENDED_UPGRADE_PERIODIC_SCRIPT_CONTENT="
-APT::Periodic::Update-Package-Lists \"1\";
-APT::Periodic::Download-Upgradeable-Packages \"1\";
-APT::Periodic::Unattended-Upgrade \"1\";
-APT::Periodic::AutocleanInterval \"1\";
 "
 
 
@@ -495,6 +559,60 @@ sudo nginx -t
 
 echo "" && echo "[INFO] enabling unattended-upgrade ..."
 echo "${UNATTENDED_UPGRADE_PERIODIC_SCRIPT_CONTENT}" | sudo tee /etc/apt/apt.conf.d/10periodic > /dev/null
+
+
+echo "" && echo "[INFO] creating taiga backup user ..."
+cd ~
+sudo adduser \
+   --system \
+   --shell /bin/bash \
+   --gecos 'Taiga Backup Account' \
+   --group \
+   --disabled-password \
+   --home /home/${TAIGA_BACKUP_NAME} \
+   ${TAIGA_BACKUP_NAME}
+
+sudo mkdir -p /home/${TAIGA_BACKUP_NAME}/persist
+sudo mkdir -p /home/${TAIGA_BACKUP_NAME}/restore
+
+sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/persist
+sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/restore
+
+sudo chmod 500 /home/${TAIGA_BACKUP_NAME}/persist
+sudo chmod 300 /home/${TAIGA_BACKUP_NAME}/restore
+sudo chmod 700 /home/${TAIGA_BACKUP_NAME}
+
+
+echo "" && echo "[INFO] creating files for ssh public keys for ${TAIGA_BACKUP_NAME} ..."
+sudo mkdir -p /home/${TAIGA_BACKUP_NAME}/.ssh
+echo "" | sudo tee /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys > /dev/null
+
+sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/.ssh
+sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys
+
+sudo chmod 700 /home/${TAIGA_BACKUP_NAME}/.ssh
+sudo chmod 400 /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys
+
+
+echo "" && echo "[INFO] storing backup key ..."
+echo ${BACKUP_KEY} > backup-key.txt
+chmod 600 backup-key.txt
+
+
+echo "" && echo "[INFO] creating backup job ..."
+echo "${BACKUP_SCRIPT_CONTENT}" > /home/${TAIGA_USER_NAME}/create-backup.sh
+chmod 700 /home/${TAIGA_USER_NAME}/create-backup.sh
+(sudo crontab -l 2> /dev/null; echo "${BACKUP_EVENT}	/bin/bash /home/${TAIGA_USER_NAME}/create-backup.sh") | sudo crontab -
+
+
+echo "" && echo "[INFO] creating backup ssh key script ..."
+echo "${ADD_BACKUP_SSHKEY_SCRIPT_CONTENT}" > /home/${TAIGA_USER_NAME}/add-backup-ssh-key.sh
+chmod 700 /home/${TAIGA_USER_NAME}/add-backup-ssh-key.sh
+
+
+echo "" && echo "[INFO] creating backup restore script ..."
+echo "${RESTORE_SCRIPT_CONTENT}" > /home/${TAIGA_USER_NAME}/restore-backup.sh
+chmod 700 /home/${TAIGA_USER_NAME}/restore-backup.sh
 
 
 echo "" && echo "[INFO] installation finished. Rebooting now ..."
