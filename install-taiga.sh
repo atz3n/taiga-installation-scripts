@@ -292,18 +292,20 @@ BACKUP_SCRIPT_CONTENT="
 BACKUP_NAME=\"taiga-backup-\$(date +'%s').tar.gz\"
 
 
-echo \"\" > /home/${TAIGA_USER_NAME}/taiga.dump
-chmod 666 /home/${TAIGA_USER_NAME}/taiga.dump
+cd /home/${TAIGA_USER_NAME}
 
-sudo -u postgres pg_dump --format=custom --dbname=taiga --file=/home/${TAIGA_USER_NAME}/taiga.dump
+echo \"\" > taiga.dump
+chmod 666 taiga.dump
+
+sudo -u postgres pg_dump --format=custom --dbname=taiga --file=taiga.dump
 
 sudo bash -c \"rm -f /home/${TAIGA_BACKUP_NAME}/persist/taiga-backup-*\"
 
-tar -pcvzf /home/${TAIGA_USER_NAME}/\${BACKUP_NAME} /home/${TAIGA_USER_NAME}/taiga.dump /home/${TAIGA_USER_NAME}/taiga-back/media/
-sudo openssl enc -aes-256-cbc -e -in /home/${TAIGA_USER_NAME}/\${BACKUP_NAME} -out /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\" -kfile /home/${TAIGA_USER_NAME}/backup-key.txt
+tar -pcvzf \${BACKUP_NAME} taiga.dump taiga-back/media/
+sudo openssl enc -aes-256-cbc -e -in \${BACKUP_NAME} -out /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\" -kfile backup-key.txt
 
-rm -f /home/${TAIGA_USER_NAME}/taiga.dump
-rm -f /home/${TAIGA_USER_NAME}/\${BACKUP_NAME}
+rm -f taiga.dump
+rm -f \${BACKUP_NAME}
 
 sudo chown ${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\"
 sudo chmod 400 /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\"
@@ -324,7 +326,42 @@ https://github.com/taigaio/taiga-back/issues/100
 "
 
 
+# #!/bin/bash
 
+# echo "[INFO] restoring backup ..."
+
+# ENC_BACKUP_NAME=$(sudo find /home/taigabackup/restore/taiga-backup-*.tar.gz.enc)
+# ENC_BACKUP_NAME="$(basename $ENC_BACKUP_NAME)"
+
+# BACKUP_NAME="${ENC_BACKUP_NAME::-4}"
+
+
+# #cd /home/taiga/
+# #sudo openssl aes-256-cbc -d -in /home/taigabackup/restore/${ENC_BACKUP_NAME} -out ${BACKUP_NAME} -kfile backup-key.txt
+
+
+# #mkdir tmp
+# #cd tmp/
+# #tar -xzf ./../\${BACKUP_NAME}
+# #cd ~
+
+
+# #rm -rf taiga-back/media
+# #mv tmp/taiga-back/media taiga-back/media
+
+
+# #sudo -u postgres dropdb taiga
+# #sudo -u postgres createdb taiga
+# #sudo -u postgres pg_restore -d taiga tmp/taiga.dump
+
+
+# #rm -r tmp
+# #rm ${BACKUP_NAME}
+# #rm /home/taigabackup/restore/${ENC_BACKUP_NAME}
+
+
+# echo \"[INFO] rebooting ...\"
+# #reboot
 
 
 
