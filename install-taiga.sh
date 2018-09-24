@@ -15,8 +15,15 @@ TAIGA_USER_NAME="taiga"
 TAIGA_EVENTS_PASSWORD="som3.event"
 TAIGA_BACKEND_SECRET_KEY="som3.secretKey"
 
-# TAIGA_DOMAIN="taiga.some.one"
-TAIGA_DOMAIN="taigatest.some.one"
+TAIGA_DOMAIN="taiga.some.one"
+#TAIGA_DOMAIN=$(hostname -I | head -n1 | cut -d " " -f1)
+
+ENABLE_LETSENCRYPT=true
+LETSENCRYPT_EMAIL="dummy@dummy.com"
+LETSENCRYPT_RENEW_EVENT="30 2	1 */2 *" # At 02:30 on day-of-month 1 in every 2nd month.
+                                         # (Every 60 days. That's the default time range from certbot)
+
+RECREATING_DH_PARAMETER=true # strengthens security but takes a long time to generate
 
 
 ###################################################################################################
@@ -34,9 +41,9 @@ export LC_CTYPE=\"en_US.UTF-8\"
 TAIGA_BACKEND_CONFIG_FILE_CONTENT="
 from .common import *
 
-MEDIA_URL = \"http://${TAIGA_DOMAIN}/media/\"
-STATIC_URL = \"http://${TAIGA_DOMAIN}/static/\"
-SITES[\"front\"][\"scheme\"] = \"http\"
+MEDIA_URL = \"https://${TAIGA_DOMAIN}/media/\"
+STATIC_URL = \"https://${TAIGA_DOMAIN}/static/\"
+SITES[\"front\"][\"scheme\"] = \"https\"
 SITES[\"front\"][\"domain\"] = \"${TAIGA_DOMAIN}\"
 
 SECRET_KEY = \"${TAIGA_BACKEND_SECRET_KEY}\"
@@ -70,8 +77,8 @@ EVENTS_PUSH_BACKEND_OPTIONS = {\"url\": \"amqp://taiga:${TAIGA_EVENTS_PASSWORD}@
 
 TAIGA_FRONTEND_CONFIG_FILE_CONTENT="
 {
-    \"api\": \"http://${TAIGA_DOMAIN}/api/v1/\",
-    \"eventsUrl\": \"ws://${TAIGA_DOMAIN}/events\",
+    \"api\": \"https://${TAIGA_DOMAIN}/api/v1/\",
+    \"eventsUrl\": \"wss://${TAIGA_DOMAIN}/events\",
     \"eventsMaxMissedHeartbeats\": 5,
     \"eventsHeartbeatIntervalTime\": 60000,
     \"eventsReconnectTryInterval\": 10000,
@@ -95,6 +102,7 @@ TAIGA_FRONTEND_CONFIG_FILE_CONTENT="
 }
 "
 
+
 TAIGA_EVENTS_CONFIG_FILE_CONTENT="
 {
     \"url\": \"amqp://taiga:${TAIGA_EVENTS_PASSWORD}@localhost:5672/taiga\",
@@ -104,6 +112,7 @@ TAIGA_EVENTS_CONFIG_FILE_CONTENT="
     }
 }
 "
+
 
 CIRCUS_TAIGA_EVENTS_CONFIG_FILE_CONTENT="
 [watcher:taiga-events]
@@ -187,10 +196,18 @@ NGINX_CONFIGURATION_FILE_CONTENT="
 server {
     listen 80 default_server;
     server_name _;
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    server_name _;
 
     large_client_header_buffers 4 32k;
     client_max_body_size 50M;
     charset utf-8;
+
+    index index.html;
 
     access_log /home/${TAIGA_USER_NAME}/logs/nginx.access.log;
     error_log /home/${TAIGA_USER_NAME}/logs/nginx.error.log;
@@ -243,8 +260,53 @@ server {
 	proxy_send_timeout 7d;
 	proxy_read_timeout 7d;
 	}
+
+    add_header Strict-Transport-Security \"max-age=63072000; includeSubdomains; preload\";
+    add_header Public-Key-Pins 'pin-sha256=\"klO23nT2ehFDXCfx3eHTDRESMz3asj1muO+4aIdjiuY=\"; pin-sha256=\"633lt352PKRXbOwf4xSEa1M517scpD3l5f79xMD9r9Q=\"; max-age=2592000; includeSubDomains';
+
+    ssl on;
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    # ssl_certificate /etc/nginx/ssl/example.com/ssl-bundle.crt;
+    # ssl_certificate_key /etc/nginx/ssl/example.com/example_com.key;
+    ssl_session_timeout 5m;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK';
+    ssl_session_cache shared:SSL:10m;
+$(if [ ${RECREATING_DH_PARAMETER} == true ]; then
+    echo "    ssl_dhparam /etc/ssl/dhparam.pem;"
+fi)
+    ssl_stapling on;
+    ssl_stapling_verify on;
 }
 "
+
+
+RENEW_CERTIFICATE_SCRIPT_CONTENT="
+#!/bin/bash
+
+echo \"[INFO] \$(date) ...\" > renew-certificate.log
+
+echo \"[INFO] stopping nginx service ...\" >> renew-certificate.log
+systemctl stop nginx.service >> renew-certificate.log
+echo \"\" >> renew-certificate.log
+
+echo \"[INFO] renewing certificate ...\" >> renew-certificate.log
+certbot renew >> renew-certificate.log
+echo \"\" >> renew-certificate.log
+
+echo \"[INFO] restarting nginx service ...\" >> renew-certificate.log
+systemctl start nginx.service >> renew-certificate.log
+"
+
+UNATTENDED_UPGRADE_PERIODIC_SCRIPT_CONTENT="
+APT::Periodic::Update-Package-Lists \"1\";
+APT::Periodic::Download-Upgradeable-Packages \"1\";
+APT::Periodic::Unattended-Upgrade \"1\";
+APT::Periodic::AutocleanInterval \"1\";
+"
+
 
 ###################################################################################################
 # MAIN
@@ -267,6 +329,7 @@ sudo apt install -y automake libtool libffi-dev curl git tmux gettext
 
 echo "" && echo "[INFO] installing nginx ..."
 sudo apt install -y nginx
+sudo service nginx stop
 
 
 echo "" && echo "[INFO] installing rabbitmq ..."
@@ -286,6 +349,17 @@ echo "" && echo "[INFO] installing python ..."
 sudo apt install -y python3 python3-pip python-dev python3-dev python-pip virtualenvwrapper
 sudo apt install -y libxml2-dev libxslt-dev
 sudo apt install -y libssl-dev libffi-dev
+
+
+if [ ${ENABLE_LETSENCRYPT} == true ]; then
+
+    echo "" && echo "[INFO] installing Let's Encrypt certbot ..."
+    sudo apt install -y software-properties-common
+    sudo add-apt-repository -y ppa:certbot/certbot
+    sudo apt update -y
+    sudo apt install -y certbot
+
+fi
 
 
 echo "" && echo "[INFO] configuring postgresql ..."
@@ -363,6 +437,46 @@ npm install
 sudo npm install -g coffee-script
 
 
+if [ ${ENABLE_LETSENCRYPT} == true ]; then
+
+    echo "" && echo "[INFO] requesting Let's Encrypt certificate ..."
+    sudo certbot certonly -n --standalone --agree-tos --email ${LETSENCRYPT_EMAIL} -d ${TAIGA_DOMAIN}
+
+  
+    echo "" && echo "[INFO] creating links to certificate and key and setting permissions ..."
+    sudo mkdir -p /etc/nginx/ssl
+    sudo ln -s /etc/letsencrypt/live/${TAIGA_DOMAIN}/fullchain.pem /etc/nginx/ssl/cert.pem
+    sudo ln -s /etc/letsencrypt/live/${TAIGA_DOMAIN}/privkey.pem /etc/nginx/ssl/key.pem
+
+    sudo chown root:${TAIGA_USER_NAME} /etc/letsencrypt/live
+    sudo chmod 750 /etc/letsencrypt/live
+
+    sudo chown root:${TAIGA_USER_NAME} /etc/letsencrypt/archive
+    sudo chmod 750 /etc/letsencrypt/archive
+
+
+    echo "" && echo "[INFO] creating renew certificate job"
+    echo "${RENEW_CERTIFICATE_SCRIPT_CONTENT}" > /home/${TAIGA_USER_NAME}/renew-certificate.sh
+    sudo chmod 700 /home/${TAIGA_USER_NAME}/renew-certificate.sh
+    (sudo crontab -l 2>> /dev/null; echo "${LETSENCRYPT_RENEW_EVENT}	/bin/bash /home/${TAIGA_USER_NAME}/renew-certificate.sh") | sudo crontab -
+
+else
+
+    echo "" && echo "[INFO] creating self signed certificate ..."
+    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=${TAIGA_DOMAIN}"
+    sudo mkdir -p /etc/nginx/ssl
+    sudo mv cert.pem /etc/nginx/ssl/
+    sudo mv key.pem /etc/nginx/ssl/
+
+fi
+
+if [ ${RECREATING_DH_PARAMETER} == true ]; then
+    echo "" && echo "[INFO] recreating diffie hellman parameter ..."
+    cd /etc/ssl
+    sudo openssl dhparam -out dhparam.pem 4096
+fi
+
+
 echo "" && echo "[INFO] creating events configuration ..."
 echo "${TAIGA_EVENTS_CONFIG_FILE_CONTENT}" > ~/taiga-events/config.json
 
@@ -373,16 +487,15 @@ echo "${CIRCUS_TAIGA_BACKEND_CONFIG_FILE_CONTENT}" | sudo tee /etc/circus/conf.d
 echo "${CIRCUS_TAIGA_CELERY_CONFIG_FILE_CONTENT}" | sudo tee /etc/circus/conf.d/taiga-celery.ini > /dev/null
 
 
-echo "" && echo "[INFO] restarting circus ..."
-sudo service circusd restart
-circusctl status
-
-
 echo "" && echo "[INFO] creating nginx configuration ..."
 sudo rm /etc/nginx/sites-enabled/default
 echo "${NGINX_CONFIGURATION_FILE_CONTENT}" | sudo tee /etc/nginx/conf.d/taiga.conf > /dev/null
-
-
-echo "" && echo "[INFO] restarting nginx ..."
 sudo nginx -t
-sudo service nginx restart
+
+
+echo "" && echo "[INFO] enabling unattended-upgrade ..."
+echo "${UNATTENDED_UPGRADE_PERIODIC_SCRIPT_CONTENT}" | sudo tee /etc/apt/apt.conf.d/10periodic > /dev/null
+
+
+echo "" && echo "[INFO] installation finished. Rebooting now ..."
+sudo reboot
