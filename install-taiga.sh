@@ -312,59 +312,44 @@ sudo chmod 400 /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\"
 "
 
 
-
 RESTORE_SCRIPT_CONTENT="
 #!/bin/bash
+
+echo \"[INFO] restoring backup ...\"
+
+ENC_BACKUP_NAME=\$(sudo bash -c \"find /home/${TAIGA_BACKUP_NAME}/restore/taiga-backup-*.tar.gz.enc\")
+ENC_BACKUP_NAME=\"\$(basename \$ENC_BACKUP_NAME)\"
+
+BACKUP_NAME=\"\${ENC_BACKUP_NAME::-4}\"
+
+
+cd /home/${TAIGA_USER_NAME}/
+sudo openssl aes-256-cbc -d -in /home/${TAIGA_BACKUP_NAME}/restore/\${ENC_BACKUP_NAME} -out \${BACKUP_NAME} -kfile backup-key.txt
+
+
+mkdir tmp
+cd tmp/
+tar -xzf ./../\${BACKUP_NAME}
+cd ~
+
+
+rm -rf taiga-back/media
+mv tmp/taiga-back/media taiga-back/media
+
+
 sudo -u postgres dropdb taiga
 sudo -u postgres createdb taiga
-sudo -u postgres pg_restore -d taiga ~/Backup/taiga.dump
+sudo -u postgres pg_restore -d taiga tmp/taiga.dump
 
 
-https://github.com/taigaio/taiga-back/issues/961
-https://github.com/taigaio/taiga-doc/issues/133
-https://github.com/taigaio/taiga-back/issues/100
+rm -r tmp/
+rm -f \${BACKUP_NAME}
+sudo rm -f /home/${TAIGA_BACKUP_NAME}/restore/\${ENC_BACKUP_NAME}
+
+
+echo \"[INFO] rebooting ...\"
+sudo reboot
 "
-
-
-# #!/bin/bash
-
-# echo "[INFO] restoring backup ..."
-
-# ENC_BACKUP_NAME=$(sudo find /home/taigabackup/restore/taiga-backup-*.tar.gz.enc)
-# ENC_BACKUP_NAME="$(basename $ENC_BACKUP_NAME)"
-
-# BACKUP_NAME="${ENC_BACKUP_NAME::-4}"
-
-
-# #cd /home/taiga/
-# #sudo openssl aes-256-cbc -d -in /home/taigabackup/restore/${ENC_BACKUP_NAME} -out ${BACKUP_NAME} -kfile backup-key.txt
-
-
-# #mkdir tmp
-# #cd tmp/
-# #tar -xzf ./../\${BACKUP_NAME}
-# #cd ~
-
-
-# #rm -rf taiga-back/media
-# #mv tmp/taiga-back/media taiga-back/media
-
-
-# #sudo -u postgres dropdb taiga
-# #sudo -u postgres createdb taiga
-# #sudo -u postgres pg_restore -d taiga tmp/taiga.dump
-
-
-# #rm -r tmp
-# #rm ${BACKUP_NAME}
-# #rm /home/taigabackup/restore/${ENC_BACKUP_NAME}
-
-
-# echo \"[INFO] rebooting ...\"
-# #reboot
-
-
-
 
 
 ADD_BACKUP_SSHKEY_SCRIPT_CONTENT="
