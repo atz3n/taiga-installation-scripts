@@ -143,18 +143,18 @@ echo \"[INFO] done\"
 ###################################################################################################
 
 echo "[INFO] creating backup pulling file ..."
-echo "$PULL_BACKUP_SCRIPT_CONTENT" > pull-backup.sh
-chmod 700 pull-backup.sh
+echo "$PULL_BACKUP_SCRIPT_CONTENT" > ${BACKUP_FILE_PREFIX}-pull-backup.sh
+chmod 700 ${BACKUP_FILE_PREFIX}-pull-backup.sh
 
 
 echo "[INFO] creating backup pushing file ..."
-echo "$PUSH_BACKUP_SCRIPT_CONTENT" > push-backup.sh
-chmod 700 push-backup.sh
+echo "$PUSH_BACKUP_SCRIPT_CONTENT" > ${BACKUP_FILE_PREFIX}-push-backup.sh
+chmod 700 ${BACKUP_FILE_PREFIX}-push-backup.sh
 
 
 if [ ${ENABLE_CRONJOB} == true ]; then
   echo "[INFO] creating backup pulling job ..."
-  (crontab -l 2>>/dev/null; echo "${BACKUP_PULL_EVENT}	/bin/bash ${PWD}/pull-backup.sh") | crontab -
+  (crontab -l 2>>/dev/null; echo "${BACKUP_PULL_EVENT}	/bin/bash ${PWD}/${BACKUP_FILE_PREFIX}-pull-backup.sh") | crontab -
 fi
 
 
