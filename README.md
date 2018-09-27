@@ -13,17 +13,17 @@ The backup scripts created by `install-backup-scripts.sh` are tested on an Raspb
 There are two ways to install taiga with the `install-taiga.sh` script
 1. Way one
     1. create a sudo user
-    1. copy `install-taiga.sh` to the sudo user
+    1. copy `install-taiga.sh` to the new sudo user
     1. login as sudo user via ssh
     1. open `install-taiga.sh` and adapt the configuration to your needs
-    1. make script executable `chmod 700 install-gitea.sh`
-    1. execute script `./install-gitea.sh`
-1. Way two (works only with a Linux based system)
-    1. open `remote-install.sh`
-    1. adapt the configuration to your needs. **CAUTION**: this script needs the 'create-sudo-user.sh' script from the [misc-server-scripts](https://gitea.some.one/Infrastructure/misc-server-scripts) repo
-    1. execute `remote-install.sh` on your local machine. It will create a sudo user and executes 'install-taiga.sh'
+    1. make script executable `chmod 700 install-taiga.sh`
+    1. execute script `./install-taiga.sh`
+1. Way two (Works only with a Linux based system)
+    1. open `remote-install.sh` on your local machine
+    1. adapt the configuration to your needs. **CAUTION**: this script needs the `create-sudo-user.sh` script from the [misc-server-scripts](https://gitea.some.one/Infrastructure/misc-server-scripts) repo
+    1. execute `remote-install.sh` on your local machine. It will create a sudo user and executes 'install-taiga.sh' on the taiga server
 
-*Hint:* The installation script configures taiga in the way that it is **not allowed to selfcreate an account**. To **add an user** go to the **admin page:** `<taiga domain>/admin/`, login as admin and add an user. The **default admin account** is **admin** with **password 123123**
+*Hint:* The installation script configures taiga in the way that it is **not allowed to selfcreate an account**. To **add an user** go to the **admin page:** `<SERVER_DOMAIN>/admin/`, login as admin and add an user. The **default admin account** is **admin** with **password 123123**
 
 
 ## Backups
