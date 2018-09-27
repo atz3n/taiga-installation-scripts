@@ -6,7 +6,7 @@
 
 SERVER_DOMAIN="taiga.some.one"
 
-CREATE_SUDO_USER_SCRIPT_PATH="/home/atzen/someone/gitea/Infrastructure/misc-server-scripts/"
+CREATE_SUDO_USER_SCRIPT_PATH="<path to create-sudo-user.sh>"
 
 SUDO_USER_NAME="taiga"
 
