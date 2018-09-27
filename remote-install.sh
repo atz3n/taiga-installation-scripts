@@ -4,9 +4,11 @@
 # CONFIGURATION
 ###################################################################################################
 
-SERVER_ADDRESS="taiga.some.one"
+SERVER_DOMAIN="taiga.some.one"
 
 CREATE_SUDO_USER_SCRIPT_PATH="/home/atzen/someone/gitea/Infrastructure/misc-server-scripts/"
+
+SUDO_USER_NAME="taiga"
 
 
 ###################################################################################################
@@ -23,11 +25,8 @@ INSTALL_TAIGA_SCRIPT_PATH=$(dirname `which $0`)
 # MAIN
 ###################################################################################################
 
-ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R ${SERVER_ADDRESS}
-ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R 104.248.100.108
+scp ${CREATE_SUDO_USER_SCRIPT_PATH}/${CREATE_SUDO_USER_SCRIPT_NAME} root@${SERVER_DOMAIN}: | tee log.txt
+ssh -t root@${SERVER_DOMAIN} "chmod 700 ${CREATE_SUDO_USER_SCRIPT_NAME} && ./${CREATE_SUDO_USER_SCRIPT_NAME}" | tee -a log.txt
 
-scp ${CREATE_SUDO_USER_SCRIPT_PATH}/${CREATE_SUDO_USER_SCRIPT_NAME} root@${SERVER_ADDRESS}: | tee log.txt
-ssh -t root@${SERVER_ADDRESS} "chmod 700 ${CREATE_SUDO_USER_SCRIPT_NAME} && ./${CREATE_SUDO_USER_SCRIPT_NAME}" | tee -a log.txt
-
-scp ${INSTALL_TAIGA_SCRIPT_PATH}/${INSTALL_TAIGA_SCRIPT_NAME} taiga@${SERVER_ADDRESS}: | tee -a log.txt
-ssh -t taiga@${SERVER_ADDRESS} "chmod 700 ${INSTALL_TAIGA_SCRIPT_NAME} && ./${INSTALL_TAIGA_SCRIPT_NAME}" | tee -a log.txt
+scp ${INSTALL_TAIGA_SCRIPT_PATH}/${INSTALL_TAIGA_SCRIPT_NAME} ${SUDO_USER_NAME}@${SERVER_DOMAIN}: | tee -a log.txt
+ssh -t ${SUDO_USER_NAME}@${SERVER_DOMAIN} "chmod 700 ${INSTALL_TAIGA_SCRIPT_NAME} && ./${INSTALL_TAIGA_SCRIPT_NAME}" | tee -a log.txt

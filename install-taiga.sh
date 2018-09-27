@@ -12,22 +12,23 @@
 
 TAIGA_USER_NAME="taiga"
 
-TAIGA_DOMAIN="taiga.some.one"
-#TAIGA_DOMAIN=$(hostname -I | head -n1 | cut -d " " -f1)
+SERVER_DOMAIN="taiga.some.one"
+#SERVER_DOMAIN=$(hostname -I | head -n1 | cut -d " " -f1)
 
 TAIGA_EVENTS_PASSWORD="som3.event"
 TAIGA_BACKEND_SECRET_KEY="som3.secretKey"
 
-TAIGA_BACKUP_NAME="taigabackup"
+BACKUP_USER_NAME="taigabackup"
+BACKUP_FILE_PREFIX="taiga"
 BACKUP_EVENT="0 3	* * *" # every day at 03:00 (see https://wiki.ubuntuusers.de/Cron/ for syntax)
 BACKUP_KEY="dummy1234"
 
-ENABLE_LETSENCRYPT=false
+ENABLE_LETSENCRYPT=true
 LETSENCRYPT_EMAIL="dummy@dummy.com"
 LETSENCRYPT_RENEW_EVENT="30 2	1 */2 *" # At 02:30 on day-of-month 1 in every 2nd month.
                                          # (Every 60 days. That's the default time range from certbot)
 
-RECREATING_DH_PARAMETER=false # strengthens security but takes a long time to generate
+RECREATING_DH_PARAMETER=true # strengthens security but takes a long time to generate
 
 
 ###################################################################################################
@@ -45,10 +46,10 @@ export LC_CTYPE=\"en_US.UTF-8\"
 TAIGA_BACKEND_CONFIG_FILE_CONTENT="
 from .common import *
 
-MEDIA_URL = \"https://${TAIGA_DOMAIN}/media/\"
-STATIC_URL = \"https://${TAIGA_DOMAIN}/static/\"
+MEDIA_URL = \"https://${SERVER_DOMAIN}/media/\"
+STATIC_URL = \"https://${SERVER_DOMAIN}/static/\"
 SITES[\"front\"][\"scheme\"] = \"https\"
-SITES[\"front\"][\"domain\"] = \"${TAIGA_DOMAIN}\"
+SITES[\"front\"][\"domain\"] = \"${SERVER_DOMAIN}\"
 
 SECRET_KEY = \"${TAIGA_BACKEND_SECRET_KEY}\"
 
@@ -81,8 +82,8 @@ EVENTS_PUSH_BACKEND_OPTIONS = {\"url\": \"amqp://taiga:${TAIGA_EVENTS_PASSWORD}@
 
 TAIGA_FRONTEND_CONFIG_FILE_CONTENT="
 {
-    \"api\": \"https://${TAIGA_DOMAIN}/api/v1/\",
-    \"eventsUrl\": \"wss://${TAIGA_DOMAIN}/events\",
+    \"api\": \"https://${SERVER_DOMAIN}/api/v1/\",
+    \"eventsUrl\": \"wss://${SERVER_DOMAIN}/events\",
     \"eventsMaxMissedHeartbeats\": 5,
     \"eventsHeartbeatIntervalTime\": 60000,
     \"eventsReconnectTryInterval\": 10000,
@@ -289,7 +290,7 @@ fi)
 BACKUP_SCRIPT_CONTENT="
 #!/bin/bash
 
-BACKUP_NAME=\"taiga-backup-\$(date +'%s').tar.gz\"
+BACKUP_NAME=\"${BACKUP_FILE_PREFIX}-backup-\$(date +'%s').tar.gz\"
 
 
 cd /home/${TAIGA_USER_NAME}
@@ -299,16 +300,16 @@ chmod 666 taiga.dump
 
 sudo -u postgres pg_dump --format=custom --dbname=taiga --file=taiga.dump
 
-sudo bash -c \"rm -f /home/${TAIGA_BACKUP_NAME}/persist/taiga-backup-*\"
+sudo bash -c \"rm -f /home/${BACKUP_USER_NAME}/persist/${BACKUP_FILE_PREFIX}-backup-*\"
 
-tar -pcvzf \${BACKUP_NAME} taiga.dump taiga-back/media/
-sudo openssl enc -aes-256-cbc -e -in \${BACKUP_NAME} -out /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\" -kfile backup-key.txt
+sudo tar -pcvzf \${BACKUP_NAME} taiga.dump taiga-back/media/ /home/${BACKUP_USER_NAME}/.ssh/authorized_keys
+sudo openssl enc -aes-256-cbc -e -in \${BACKUP_NAME} -out /home/${BACKUP_USER_NAME}/persist/\"\${BACKUP_NAME}.enc\" -kfile backup-key.txt
 
 rm -f taiga.dump
 rm -f \${BACKUP_NAME}
 
-sudo chown ${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\"
-sudo chmod 400 /home/${TAIGA_BACKUP_NAME}/persist/\"\${BACKUP_NAME}.enc\"
+sudo chown ${BACKUP_USER_NAME} /home/${BACKUP_USER_NAME}/persist/\"\${BACKUP_NAME}.enc\"
+sudo chmod 400 /home/${BACKUP_USER_NAME}/persist/\"\${BACKUP_NAME}.enc\"
 "
 
 
@@ -317,20 +318,24 @@ RESTORE_SCRIPT_CONTENT="
 
 echo \"[INFO] restoring backup ...\"
 
-ENC_BACKUP_NAME=\$(sudo bash -c \"find /home/${TAIGA_BACKUP_NAME}/restore/taiga-backup-*.tar.gz.enc\")
+ENC_BACKUP_NAME=\$(sudo bash -c \"find /home/${BACKUP_USER_NAME}/restore/${BACKUP_FILE_PREFIX}-backup-*.tar.gz.enc\")
 ENC_BACKUP_NAME=\"\$(basename \$ENC_BACKUP_NAME)\"
 
 BACKUP_NAME=\"\${ENC_BACKUP_NAME::-4}\"
 
 
 cd /home/${TAIGA_USER_NAME}/
-sudo openssl aes-256-cbc -d -in /home/${TAIGA_BACKUP_NAME}/restore/\${ENC_BACKUP_NAME} -out \${BACKUP_NAME} -kfile backup-key.txt
+sudo openssl aes-256-cbc -d -in /home/${BACKUP_USER_NAME}/restore/\${ENC_BACKUP_NAME} -out \${BACKUP_NAME} -kfile backup-key.txt
 
 
 mkdir tmp
 cd tmp/
 tar -xzf ./../\${BACKUP_NAME}
 cd ~
+
+
+sudo mv tmp/home/${BACKUP_USER_NAME}/.ssh/authorized_keys /home/${BACKUP_USER_NAME}/.ssh/authorized_keys
+sudo chown ${BACKUP_USER_NAME}:${BACKUP_USER_NAME} /home/${BACKUP_USER_NAME}/.ssh/authorized_keys
 
 
 rm -rf taiga-back/media
@@ -344,7 +349,7 @@ sudo -u postgres pg_restore -d taiga tmp/taiga.dump
 
 rm -r tmp/
 rm -f \${BACKUP_NAME}
-sudo rm -f /home/${TAIGA_BACKUP_NAME}/restore/\${ENC_BACKUP_NAME}
+sudo rm -f /home/${BACKUP_USER_NAME}/restore/\${ENC_BACKUP_NAME}
 
 
 echo \"[INFO] rebooting ...\"
@@ -363,12 +368,12 @@ if ! [ \${PUB_SSH_KEY:0:7} = \"ssh-rsa\" ]; then
 elif ! [ \$# = 1 ]; then
     echo \"[ERROR] two many arguments. Surround rsa key with double quotes: \\\"<PUBLIC KEY>\\\"\"
 else
-    echo \"command=\\\"if [[ \\\\\\\"\\\$SSH_ORIGINAL_COMMAND\\\\\\\" =~ ^scp[[:space:]]-t[[:space:]]restore/.? ]] || [[ \\\\\\\"\\\$SSH_ORIGINAL_COMMAND\\\\\\\" =~ ^scp[[:space:]]-f[[:space:]]persist/.? ]]; then \\\$SSH_ORIGINAL_COMMAND ; else echo Access Denied; fi\\\",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding \${PUB_SSH_KEY}\" | sudo tee /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys > /dev/null
+    echo \"command=\\\"if [[ \\\\\\\"\\\$SSH_ORIGINAL_COMMAND\\\\\\\" =~ ^scp[[:space:]]-t[[:space:]]restore/.? ]] || [[ \\\\\\\"\\\$SSH_ORIGINAL_COMMAND\\\\\\\" =~ ^scp[[:space:]]-f[[:space:]]persist/.? ]]; then \\\$SSH_ORIGINAL_COMMAND ; else echo Access Denied; fi\\\",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding \${PUB_SSH_KEY}\" | sudo tee -a /home/${BACKUP_USER_NAME}/.ssh/authorized_keys > /dev/null
 fi
 "
 
 
-UNATTENDED_UPGRADE_PERIODIC_SCRIPT_CONTENT="
+UNATTENDED_UPGRADE_PERIODIC_CONFIG_FILE_CONTENT="
 APT::Periodic::Update-Package-Lists \"1\";
 APT::Periodic::Download-Upgradeable-Packages \"1\";
 APT::Periodic::Unattended-Upgrade \"1\";
@@ -526,13 +531,13 @@ sudo npm install -g coffee-script
 if [ ${ENABLE_LETSENCRYPT} == true ]; then
 
     echo "" && echo "[INFO] requesting Let's Encrypt certificate ..."
-    sudo certbot certonly -n --standalone --agree-tos --email ${LETSENCRYPT_EMAIL} -d ${TAIGA_DOMAIN}
+    sudo certbot certonly -n --standalone --agree-tos --email ${LETSENCRYPT_EMAIL} -d ${SERVER_DOMAIN}
 
   
     echo "" && echo "[INFO] creating links to certificate and key and setting permissions ..."
     sudo mkdir -p /etc/nginx/ssl
-    sudo ln -s /etc/letsencrypt/live/${TAIGA_DOMAIN}/fullchain.pem /etc/nginx/ssl/cert.pem
-    sudo ln -s /etc/letsencrypt/live/${TAIGA_DOMAIN}/privkey.pem /etc/nginx/ssl/key.pem
+    sudo ln -s /etc/letsencrypt/live/${SERVER_DOMAIN}/fullchain.pem /etc/nginx/ssl/cert.pem
+    sudo ln -s /etc/letsencrypt/live/${SERVER_DOMAIN}/privkey.pem /etc/nginx/ssl/key.pem
 
     sudo chown root:${TAIGA_USER_NAME} /etc/letsencrypt/live
     sudo chmod 750 /etc/letsencrypt/live
@@ -549,7 +554,7 @@ if [ ${ENABLE_LETSENCRYPT} == true ]; then
 else
 
     echo "" && echo "[INFO] creating self signed certificate ..."
-    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=${TAIGA_DOMAIN}"
+    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=${SERVER_DOMAIN}"
     sudo mkdir -p /etc/nginx/ssl
     sudo mv cert.pem /etc/nginx/ssl/
     sudo mv key.pem /etc/nginx/ssl/
@@ -580,7 +585,7 @@ sudo nginx -t
 
 
 echo "" && echo "[INFO] enabling unattended-upgrade ..."
-echo "${UNATTENDED_UPGRADE_PERIODIC_SCRIPT_CONTENT}" | sudo tee /etc/apt/apt.conf.d/10periodic > /dev/null
+echo "${UNATTENDED_UPGRADE_PERIODIC_CONFIG_FILE_CONTENT}" | sudo tee /etc/apt/apt.conf.d/10periodic > /dev/null
 
 
 echo "" && echo "[INFO] creating taiga backup user ..."
@@ -591,29 +596,29 @@ sudo adduser \
    --gecos 'Taiga Backup Account' \
    --group \
    --disabled-password \
-   --home /home/${TAIGA_BACKUP_NAME} \
-   ${TAIGA_BACKUP_NAME}
+   --home /home/${BACKUP_USER_NAME} \
+   ${BACKUP_USER_NAME}
 
-sudo mkdir -p /home/${TAIGA_BACKUP_NAME}/persist
-sudo mkdir -p /home/${TAIGA_BACKUP_NAME}/restore
+sudo mkdir -p /home/${BACKUP_USER_NAME}/persist
+sudo mkdir -p /home/${BACKUP_USER_NAME}/restore
 
-sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/persist
-sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/restore
+sudo chown ${BACKUP_USER_NAME}:${BACKUP_USER_NAME} /home/${BACKUP_USER_NAME}/persist
+sudo chown ${BACKUP_USER_NAME}:${BACKUP_USER_NAME} /home/${BACKUP_USER_NAME}/restore
 
-sudo chmod 500 /home/${TAIGA_BACKUP_NAME}/persist
-sudo chmod 300 /home/${TAIGA_BACKUP_NAME}/restore
-sudo chmod 700 /home/${TAIGA_BACKUP_NAME}
+sudo chmod 500 /home/${BACKUP_USER_NAME}/persist
+sudo chmod 300 /home/${BACKUP_USER_NAME}/restore
+sudo chmod 700 /home/${BACKUP_USER_NAME}
 
 
-echo "" && echo "[INFO] creating files for ssh public keys for ${TAIGA_BACKUP_NAME} ..."
-sudo mkdir -p /home/${TAIGA_BACKUP_NAME}/.ssh
-echo "" | sudo tee /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys > /dev/null
+echo "" && echo "[INFO] creating files for ssh public keys for ${BACKUP_USER_NAME} ..."
+sudo mkdir -p /home/${BACKUP_USER_NAME}/.ssh
+echo "" | sudo tee /home/${BACKUP_USER_NAME}/.ssh/authorized_keys > /dev/null
 
-sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/.ssh
-sudo chown ${TAIGA_BACKUP_NAME}:${TAIGA_BACKUP_NAME} /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys
+sudo chown ${BACKUP_USER_NAME}:${BACKUP_USER_NAME} /home/${BACKUP_USER_NAME}/.ssh
+sudo chown ${BACKUP_USER_NAME}:${BACKUP_USER_NAME} /home/${BACKUP_USER_NAME}/.ssh/authorized_keys
 
-sudo chmod 700 /home/${TAIGA_BACKUP_NAME}/.ssh
-sudo chmod 400 /home/${TAIGA_BACKUP_NAME}/.ssh/authorized_keys
+sudo chmod 700 /home/${BACKUP_USER_NAME}/.ssh
+sudo chmod 400 /home/${BACKUP_USER_NAME}/.ssh/authorized_keys
 
 
 echo "" && echo "[INFO] storing backup key ..."
@@ -637,5 +642,5 @@ echo "${RESTORE_SCRIPT_CONTENT}" > /home/${TAIGA_USER_NAME}/restore-backup.sh
 chmod 700 /home/${TAIGA_USER_NAME}/restore-backup.sh
 
 
-echo "" && echo "[INFO] installation finished. Rebooting now ..."
+echo "" && echo "[INFO] installation finished. Rebooting ..."
 sudo reboot
