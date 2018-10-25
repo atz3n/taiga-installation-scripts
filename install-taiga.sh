@@ -10,9 +10,7 @@
 # CONFIGURATION
 ###################################################################################################
 
-TAIGA_USER_NAME="taiga"
-
-SERVER_DOMAIN="taiga.some.one"
+SERVER_DOMAIN="<domain>"
 #SERVER_DOMAIN=$(hostname -I | head -n1 | cut -d " " -f1)
 
 TAIGA_EVENTS_PASSWORD="som3.event"
@@ -23,17 +21,19 @@ BACKUP_FILE_PREFIX="taiga"
 BACKUP_EVENT="0 3	* * *" # every day at 03:00 (see https://wiki.ubuntuusers.de/Cron/ for syntax)
 BACKUP_KEY="dummy1234"
 
-ENABLE_LETSENCRYPT=true
-LETSENCRYPT_EMAIL="dummy@dummy.com"
+ENABLE_LETSENCRYPT=false
 LETSENCRYPT_RENEW_EVENT="30 2	1 */2 *" # At 02:30 on day-of-month 1 in every 2nd month.
                                          # (Every 60 days. That's the default time range from certbot)
 
-RECREATING_DH_PARAMETER=true # strengthens security but takes a long time to generate
+RECREATING_DH_PARAMETER=false # strengthens security but takes a long time to generate
 
 
 ###################################################################################################
 # DEFINES
 ###################################################################################################
+
+TAIGA_USER_NAME=$(whoami)
+
 
 PROFILE_LANGUAGE_VARIABLE="
 export LANGUAGE=\"en_US.UTF-8\"
@@ -200,13 +200,13 @@ PYTHONPATH=/home/${TAIGA_USER_NAME}/.virtualenvs/taiga/lib/python3.5/site-packag
 NGINX_CONFIGURATION_FILE_CONTENT="
 server {
     listen 80 default_server;
-    server_name _;
+    server_name ${SERVER_DOMAIN} \$server_addr;
     return 301 https://\$server_name\$request_uri;
 }
 
 server {
     listen 443 ssl default_server;
-    server_name _;
+    server_name ${SERVER_DOMAIN} \$server_addr;
 
     large_client_header_buffers 4 32k;
     client_max_body_size 50M;
@@ -531,7 +531,7 @@ sudo npm install -g coffee-script
 if [ ${ENABLE_LETSENCRYPT} == true ]; then
 
     echo "" && echo "[INFO] requesting Let's Encrypt certificate ..."
-    sudo certbot certonly -n --standalone --agree-tos --email ${LETSENCRYPT_EMAIL} -d ${SERVER_DOMAIN}
+    sudo certbot certonly -n --standalone --agree-tos --register-unsafely-without-email -d ${SERVER_DOMAIN} --rsa-key-size 4096
 
   
     echo "" && echo "[INFO] creating links to certificate and key and setting permissions ..."
