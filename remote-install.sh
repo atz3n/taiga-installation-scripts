@@ -28,7 +28,7 @@ INSTALL_TAIGA_SCRIPT_PATH=$(dirname `which $0`)
 
 
 ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R ${SERVER_DOMAIN}
-ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R 104.248.100.108
+# ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R 104.248.100.108
 
 
 scp ${MISC_SERVER_SCRIPTS_PATH}/${CREATE_SUDO_USER_SCRIPT_NAME} root@${SERVER_DOMAIN}: | tee log.txt
