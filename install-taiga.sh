@@ -21,11 +21,20 @@ BACKUP_FILE_PREFIX="taiga"
 BACKUP_EVENT="0 3	* * *" # every day at 03:00 (see https://wiki.ubuntuusers.de/Cron/ for syntax)
 BACKUP_KEY="dummy1234"
 
+ENABLE_CYCLIC_REBOOT=true # reboot to clear ram
+CYCLIC_REBOOT_EVENT="0 5	* * *" # every day at 05:00 (see https://wiki.ubuntuusers.de/Cron/ for syntax)
+
 ENABLE_LETSENCRYPT=false
 LETSENCRYPT_RENEW_EVENT="30 2	1 */2 *" # At 02:30 on day-of-month 1 in every 2nd month.
                                          # (Every 60 days. That's the default time range from certbot)
 
 RECREATING_DH_PARAMETER=false # strengthens security but takes a long time to generate
+
+ENABLE_EMAIL_NOTIFICATION=false
+EMAIL_HOST="smtp.gmail.com"
+EMAIL_HOST_USER="pm.some.one@gmail.com"
+EMAIL_HOST_PASSWORD="<mail password>"
+EMAIL_PORT=465
 
 
 ###################################################################################################
@@ -66,12 +75,15 @@ EVENTS_PUSH_BACKEND_OPTIONS = {\"url\": \"amqp://taiga:${TAIGA_EVENTS_PASSWORD}@
 
 # Uncomment and populate with proper connection parameters
 # for enable email sending. EMAIL_HOST_USER should end by @domain.tld
-#EMAIL_BACKEND = \"django.core.mail.backends.smtp.EmailBackend\"
-#EMAIL_USE_TLS = False
-#EMAIL_HOST = \"localhost\"
-#EMAIL_HOST_USER = \"\"
-#EMAIL_HOST_PASSWORD = \"\"
-#EMAIL_PORT = 25
+$(if [ ${ENABLE_EMAIL_NOTIFICATION} == true ]; then
+    echo "EMAIL_BACKEND = \"django.core.mail.backends.smtp.EmailBackend\""
+    echo "EMAIL_USE_TLS = False"
+    echo "EMAIL_USE_SSL = True"
+    echo "EMAIL_HOST = \"${EMAIL_HOST}\""
+    echo "EMAIL_HOST_USER = \"${EMAIL_HOST_USER}\""
+    echo "EMAIL_HOST_PASSWORD = \"${EMAIL_HOST_PASSWORD}\""
+    echo "EMAIL_PORT = ${EMAIL_PORT}"
+fi)
 
 # Uncomment and populate with proper connection parameters
 # for enable github login/singin.
@@ -640,6 +652,18 @@ chmod 700 /home/${TAIGA_USER_NAME}/add-backup-ssh-key.sh
 echo "" && echo "[INFO] creating backup restore script ..."
 echo "${RESTORE_SCRIPT_CONTENT}" > /home/${TAIGA_USER_NAME}/restore-backup.sh
 chmod 700 /home/${TAIGA_USER_NAME}/restore-backup.sh
+
+
+if [ ${ENABLE_CYCLIC_REBOOT} == true ]; then
+
+    echo "" && echo "[INFO] creating reboot job ..."
+    (sudo crontab -l 2> /dev/null; echo "${CYCLIC_REBOOT_EVENT}	/sbin/reboot") | sudo crontab -
+
+fi
+
+
+echo "" && echo "[INFO] cleaning up ..."
+sudo apt autoremove -y
 
 
 echo "" && echo "[INFO] installation finished. Rebooting ..."

@@ -6,7 +6,7 @@
 
 SERVER_DOMAIN="<domain>"
 
-MISC_SERVER_SCRIPTS_PATH="/home/atzen/someone/gitea/Infrastructure/misc-server-scripts/"
+MISC_SERVER_SCRIPTS_PATH="<path to misc-server-script>"
 
 SUDO_USER_NAME="taiga"
 SUDO_USER_PWD="taiga"
@@ -28,7 +28,7 @@ INSTALL_TAIGA_SCRIPT_PATH=$(dirname `which $0`)
 
 
 ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R ${SERVER_DOMAIN}
-ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R 46.101.218.160
+ssh-keygen -f "/home/atzen/.ssh/known_hosts" -R 104.248.100.108
 
 
 scp ${MISC_SERVER_SCRIPTS_PATH}/${CREATE_SUDO_USER_SCRIPT_NAME} root@${SERVER_DOMAIN}: | tee log.txt
