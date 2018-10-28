@@ -10,9 +10,7 @@
 # CONFIGURATION
 ###################################################################################################
 
-TAIGA_USER_NAME="taiga"
-
-SERVER_DOMAIN="taiga.some.one"
+SERVER_DOMAIN="<domain>"
 #SERVER_DOMAIN=$(hostname -I | head -n1 | cut -d " " -f1)
 
 TAIGA_EVENTS_PASSWORD="som3.event"
@@ -23,17 +21,28 @@ BACKUP_FILE_PREFIX="taiga"
 BACKUP_EVENT="0 3	* * *" # every day at 03:00 (see https://wiki.ubuntuusers.de/Cron/ for syntax)
 BACKUP_KEY="dummy1234"
 
-ENABLE_LETSENCRYPT=true
-LETSENCRYPT_EMAIL="dummy@dummy.com"
+ENABLE_CYCLIC_REBOOT=true # reboot to clear ram
+CYCLIC_REBOOT_EVENT="0 5	* * *" # every day at 05:00 (see https://wiki.ubuntuusers.de/Cron/ for syntax)
+
+ENABLE_LETSENCRYPT=false
 LETSENCRYPT_RENEW_EVENT="30 2	1 */2 *" # At 02:30 on day-of-month 1 in every 2nd month.
                                          # (Every 60 days. That's the default time range from certbot)
 
-RECREATING_DH_PARAMETER=true # strengthens security but takes a long time to generate
+RECREATING_DH_PARAMETER=false # strengthens security but takes a long time to generate
+
+ENABLE_EMAIL_NOTIFICATION=false
+EMAIL_HOST="smtp.gmail.com"
+EMAIL_HOST_USER="pm.some.one@gmail.com"
+EMAIL_HOST_PASSWORD="<mail password>"
+EMAIL_PORT=465
 
 
 ###################################################################################################
 # DEFINES
 ###################################################################################################
+
+TAIGA_USER_NAME=$(whoami)
+
 
 PROFILE_LANGUAGE_VARIABLE="
 export LANGUAGE=\"en_US.UTF-8\"
@@ -66,12 +75,15 @@ EVENTS_PUSH_BACKEND_OPTIONS = {\"url\": \"amqp://taiga:${TAIGA_EVENTS_PASSWORD}@
 
 # Uncomment and populate with proper connection parameters
 # for enable email sending. EMAIL_HOST_USER should end by @domain.tld
-#EMAIL_BACKEND = \"django.core.mail.backends.smtp.EmailBackend\"
-#EMAIL_USE_TLS = False
-#EMAIL_HOST = \"localhost\"
-#EMAIL_HOST_USER = \"\"
-#EMAIL_HOST_PASSWORD = \"\"
-#EMAIL_PORT = 25
+$(if [ ${ENABLE_EMAIL_NOTIFICATION} == true ]; then
+    echo "EMAIL_BACKEND = \"django.core.mail.backends.smtp.EmailBackend\""
+    echo "EMAIL_USE_TLS = False"
+    echo "EMAIL_USE_SSL = True"
+    echo "EMAIL_HOST = \"${EMAIL_HOST}\""
+    echo "EMAIL_HOST_USER = \"${EMAIL_HOST_USER}\""
+    echo "EMAIL_HOST_PASSWORD = \"${EMAIL_HOST_PASSWORD}\""
+    echo "EMAIL_PORT = ${EMAIL_PORT}"
+fi)
 
 # Uncomment and populate with proper connection parameters
 # for enable github login/singin.
@@ -200,13 +212,13 @@ PYTHONPATH=/home/${TAIGA_USER_NAME}/.virtualenvs/taiga/lib/python3.5/site-packag
 NGINX_CONFIGURATION_FILE_CONTENT="
 server {
     listen 80 default_server;
-    server_name _;
+    server_name ${SERVER_DOMAIN} \$server_addr;
     return 301 https://\$server_name\$request_uri;
 }
 
 server {
     listen 443 ssl default_server;
-    server_name _;
+    server_name ${SERVER_DOMAIN} \$server_addr;
 
     large_client_header_buffers 4 32k;
     client_max_body_size 50M;
@@ -531,7 +543,7 @@ sudo npm install -g coffee-script
 if [ ${ENABLE_LETSENCRYPT} == true ]; then
 
     echo "" && echo "[INFO] requesting Let's Encrypt certificate ..."
-    sudo certbot certonly -n --standalone --agree-tos --email ${LETSENCRYPT_EMAIL} -d ${SERVER_DOMAIN}
+    sudo certbot certonly -n --standalone --agree-tos --register-unsafely-without-email -d ${SERVER_DOMAIN} --rsa-key-size 4096
 
   
     echo "" && echo "[INFO] creating links to certificate and key and setting permissions ..."
@@ -640,6 +652,18 @@ chmod 700 /home/${TAIGA_USER_NAME}/add-backup-ssh-key.sh
 echo "" && echo "[INFO] creating backup restore script ..."
 echo "${RESTORE_SCRIPT_CONTENT}" > /home/${TAIGA_USER_NAME}/restore-backup.sh
 chmod 700 /home/${TAIGA_USER_NAME}/restore-backup.sh
+
+
+if [ ${ENABLE_CYCLIC_REBOOT} == true ]; then
+
+    echo "" && echo "[INFO] creating reboot job ..."
+    (sudo crontab -l 2> /dev/null; echo "${CYCLIC_REBOOT_EVENT}	/sbin/reboot") | sudo crontab -
+
+fi
+
+
+echo "" && echo "[INFO] cleaning up ..."
+sudo apt autoremove -y
 
 
 echo "" && echo "[INFO] installation finished. Rebooting ..."
