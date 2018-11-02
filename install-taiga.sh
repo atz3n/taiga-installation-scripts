@@ -102,7 +102,7 @@ TAIGA_FRONTEND_CONFIG_FILE_CONTENT="
     \"debug\": true,
     \"debugInfo\": false,
     \"defaultLanguage\": \"en\",
-    \"themes\": [\"taiga\"],
+    \"themes\": [\"taiga\",\"material-design\",\"high-contrast\"],
     \"defaultTheme\": \"taiga\",
     \"publicRegisterEnabled\": false,
     \"feedbackEnabled\": true,
